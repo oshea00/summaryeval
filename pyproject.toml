@@ -1,0 +1,15 @@
+[project]
+name = "summaryeval"
+version = "0.1.0"
+description = "Evals for text summarys: accuracy, completeness, coherence"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "nltk>=3.9.1",
+    "numpy>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "sentence-transformers>=5.1.0",
+    "textstat>=0.7.10",
+    "openai>=1.0.0",
+    "datasets>=4.0.0",
+]
