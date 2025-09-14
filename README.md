@@ -18,12 +18,6 @@ SummaryEval provides quantitative metrics to evaluate the quality of AI-generate
 - **LLM-as-Judge Accuracy**: Uses OpenAI models for sophisticated accuracy assessment
 - **Configurable Parameters**: Customize sample size, model selection, and output format
 
-## Installation
-
-```bash
-pip install -e .
-```
-
 ## Environment Setup
 
 Set your OpenAI API key:
