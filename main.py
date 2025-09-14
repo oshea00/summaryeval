@@ -14,6 +14,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import textstat
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
+from rouge_coherence_scorer import ROUGEEnhancedCoherenceScorer
 
 
 class SummaryEvaluator:
@@ -50,6 +51,7 @@ class SummaryEvaluator:
         self.sentence_model = SentenceTransformer(sentence_model)
         self.stop_words = set(stopwords.words("english"))
         self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.rouge_coherence_scorer = ROUGEEnhancedCoherenceScorer(sentence_model)
 
     def extract_claims(self, text: str) -> List[str]:
         """Extract factual claims from text using sentence segmentation."""
@@ -498,7 +500,7 @@ Provide a short rationale for your score. Format the response into a json docume
 
     def coherence_score(self, ai_summary: str) -> float:
         """
-        Calculate coherence score based on readability, logical flow, and consistency.
+        Calculate coherence score using ROUGE enhanced coherence scoring.
 
         Args:
             ai_summary: AI-generated summary to evaluate
@@ -512,53 +514,7 @@ Provide a short rationale for your score. Format the response into a json docume
             0.3-0.5: Fair - Some coherence problems, may be too short/vague
             0.0-0.3: Poor - Incoherent, fragmented, or very low quality
         """
-        # Readability component
-        fk_grade = textstat.flesch_kincaid_grade(ai_summary)
-        readability_norm = max(0, min(1, (20 - fk_grade) / 20))
-
-        # Logical flow component
-        logical_flow = self.calculate_logical_flow(ai_summary)
-
-        # Add discourse marker analysis
-        discourse_quality = self.analyze_discourse_markers(ai_summary)
-        logical_flow = (logical_flow + discourse_quality) / 2
-
-        # Semantic consistency component
-        claims = self.extract_claims(ai_summary)
-        contradictions = self.find_contradictions(claims)
-        total_pairs = len(claims) * (len(claims) - 1) / 2 if len(claims) > 1 else 1
-        consistency = 1 - (contradictions / total_pairs)
-
-        # Add penalty for short, vague summaries
-        words = len(ai_summary.split())
-
-        # Length penalty for very short summaries
-        length_penalty = 1.0
-        if words < 20:
-            length_penalty = max(0.3, words / 20)
-
-        # Vagueness penalty for overly simple language
-        vague_words = [
-            "something",
-            "somewhere",
-            "someone",
-            "stuff",
-            "things",
-            "about",
-            "some",
-        ]
-        vague_count = sum(
-            1 for word in ai_summary.lower().split() if word in vague_words
-        )
-        vagueness_penalty = (
-            max(0.5, 1 - (vague_count / words) * 2) if words > 0 else 1.0
-        )
-
-        # Weighted combination with penalties
-        coherence = 0.4 * readability_norm + 0.3 * logical_flow + 0.3 * consistency
-        coherence = coherence * length_penalty * vagueness_penalty
-
-        return coherence
+        return self.rouge_coherence_scorer.score(ai_summary)
 
     def generate_summary(
         self,
