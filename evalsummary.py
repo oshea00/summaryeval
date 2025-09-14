@@ -1,3 +1,31 @@
+"""
+Summary Evaluation Tool for CNN/DailyMail Dataset
+
+This module provides functionality to evaluate reference summaries from the CNN/DailyMail dataset
+using a comprehensive SummaryEvaluator with ROUGE-enhanced coherence scoring.
+
+Key Features:
+    - Loads and samples from CNN/DailyMail dataset (287k+ articles)
+    - Evaluates summaries across three dimensions:
+        * Accuracy: LLM-as-judge scoring using OpenAI models (GPT-4, GPT-4o)
+        * Completeness: Topic coverage analysis using TF-IDF and semantic similarity
+        * Coherence: ROUGE-enhanced scoring with discourse analysis and readability
+    - Flexible output formats: pretty console display or CSV export
+    - Configurable sampling with optional seeding for reproducibility
+    - Command-line interface with comprehensive argument parsing
+
+Usage Examples:
+    python evalsummary.py                     # 5 samples, GPT-4o, pretty output
+    python evalsummary.py -n 10 -m gpt-4     # 10 samples with GPT-4
+    python evalsummary.py -f csv > results.csv # CSV export for analysis
+    python evalsummary.py --seed 42 -n 20    # Reproducible results
+
+Score Ranges:
+    - Overall: 0.7-1.0 (Excellent), 0.5-0.7 (Good), 0.3-0.5 (Fair), 0.0-0.3 (Poor)
+    - All individual metrics normalized to [0.0, 1.0] range
+    - Weighted combination: 60% accuracy, 25% completeness, 15% coherence
+"""
+
 from datasets import load_dataset
 import random
 import argparse
@@ -8,7 +36,22 @@ from main import SummaryEvaluator
 
 
 def load_dataset_splits(show_progress: bool = True):
-    """Load the CNN/DailyMail dataset and return splits."""
+    """
+    Load the CNN/DailyMail dataset and return training split.
+
+    This function downloads and loads the CNN/DailyMail dataset version 3.0.0,
+    which contains approximately 287,000 news articles with reference summaries.
+
+    Args:
+        show_progress: Whether to display loading progress messages
+
+    Returns:
+        Dataset: The training split containing articles and reference summaries
+
+    Note:
+        First run may take time to download (~1.3GB). Subsequent runs use cached data.
+        Each sample contains: article (full text), highlights (reference summary), id
+    """
     if show_progress:
         print("📥 Loading CNN/DailyMail dataset...")
     dataset = load_dataset("cnn_dailymail", "3.0.0")
@@ -25,12 +68,39 @@ def evaluate_reference_summaries(
     sample_size: int = 5, model: str = "gpt-4o", output_format: str = "pretty"
 ) -> None:
     """
-    Evaluate reference summaries from CNN/DailyMail dataset.
+    Evaluate reference summaries from CNN/DailyMail dataset using comprehensive metrics.
+
+    This function randomly samples articles from the CNN/DailyMail dataset and evaluates
+    their reference summaries using the SummaryEvaluator with ROUGE-enhanced coherence scoring.
+
+    Evaluation Metrics:
+        - Accuracy (60% weight): LLM-as-judge scoring using specified OpenAI model
+        - Completeness (25% weight): Topic coverage using TF-IDF and semantic similarity
+        - Coherence (15% weight): ROUGE-enhanced scoring with discourse and readability analysis
 
     Args:
-        sample_size: Number of random articles to evaluate
-        model: OpenAI model name to use for evaluation (e.g., "gpt-4o", "gpt-4")
-        output_format: Output format - "pretty" for console display or "csv" for CSV output
+        sample_size: Number of random articles to evaluate (default: 5)
+        model: OpenAI model for accuracy evaluation (default: "gpt-4o")
+               Supported: "gpt-4o", "gpt-4", "gpt-4-turbo", "gpt-4o-mini"
+        output_format: Output format (default: "pretty")
+                      - "pretty": Formatted console display with progress indicators
+                      - "csv": Machine-readable CSV with full article text
+
+    Returns:
+        None: Results printed to stdout (redirect for CSV storage)
+
+    Output Fields (CSV mode):
+        - article_index: Original dataset index
+        - article_text: Full article content
+        - reference_summary: CNN/DailyMail reference summary
+        - accuracy, completeness, coherence, overall: Metric scores (0.000-1.000)
+        - accuracy_rationale: LLM explanation of accuracy score
+        - model: OpenAI model used for evaluation
+
+    Requires:
+        - OPENAI_API_KEY environment variable
+        - Internet connection for first-time dataset download
+        - ~2-10 seconds per evaluation depending on model and text length
     """
     # Load the dataset (suppress progress messages for CSV output)
     show_progress = output_format != "csv"
@@ -124,7 +194,25 @@ def evaluate_reference_summaries(
 
 
 def parse_arguments():
-    """Parse command line arguments."""
+    """
+    Parse command line arguments for the summary evaluation tool.
+
+    Provides comprehensive argument parsing with validation and helpful examples.
+    Supports configuration of sample size, model selection, output format, and random seeding.
+
+    Returns:
+        argparse.Namespace: Parsed command line arguments with:
+            - sample_size: Number of articles to evaluate (1-1000)
+            - model: OpenAI model name for accuracy scoring
+            - format: Output format ("pretty" or "csv")
+            - seed: Optional random seed for reproducibility
+
+    Examples:
+        Default usage: python evalsummary.py
+        Custom sample: python evalsummary.py -n 20 -m gpt-4
+        CSV export: python evalsummary.py -f csv > results.csv
+        Reproducible: python evalsummary.py --seed 42 -n 10
+    """
     parser = argparse.ArgumentParser(
         description="Evaluate reference summaries from CNN/DailyMail dataset",
         formatter_class=argparse.RawDescriptionHelpFormatter,

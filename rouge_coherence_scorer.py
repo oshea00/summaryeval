@@ -1,16 +1,14 @@
 import numpy as np
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from nltk.corpus import stopwords
 from nltk.tag import pos_tag
 from nltk.chunk import ne_chunk
 from nltk.tree import Tree
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import textstat
 from sentence_transformers import SentenceTransformer
-from collections import Counter
 import re
 from rouge_score import rouge_scorer
 
@@ -67,8 +65,9 @@ class ROUGEEnhancedCoherenceScorer:
 
         self.sentence_model = SentenceTransformer(sentence_model)
         self.stop_words = set(stopwords.words("english"))
-        self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-
+        self.rouge_scorer = rouge_scorer.RougeScorer(
+            ["rouge1", "rouge2", "rougeL"], use_stemmer=True
+        )
 
     def calculate_rouge_l(self, summary: str, reference: str = None) -> float:
         """
@@ -91,23 +90,26 @@ class ROUGEEnhancedCoherenceScorer:
 
             for i, target_sentence in enumerate(sentences):
                 # Create reference from all other sentences
-                other_sentences = [sentences[j] for j in range(len(sentences)) if j != i]
+                other_sentences = [
+                    sentences[j] for j in range(len(sentences)) if j != i
+                ]
                 if not other_sentences:
                     coherence_scores.append(0.5)
                     continue
 
                 reference_text = " ".join(other_sentences)
                 scores = self.rouge_scorer.score(reference_text, target_sentence)
-                rouge_l_score = scores['rougeL'].fmeasure
+                rouge_l_score = scores["rougeL"].fmeasure
                 coherence_scores.append(rouge_l_score)
 
             # Return average coherence score with scaling
             avg_coherence = np.mean(coherence_scores) if coherence_scores else 0.0
-            return min(1.0, avg_coherence * 1.5)  # Moderate scaling for internal coherence
+            return min(
+                1.0, avg_coherence * 1.5
+            )  # Moderate scaling for internal coherence
         else:
             scores = self.rouge_scorer.score(reference, summary)
-            return scores['rougeL'].fmeasure
-
+            return scores["rougeL"].fmeasure
 
     def calculate_rouge_n(self, summary: str, n: int = 2) -> float:
         """
@@ -125,7 +127,9 @@ class ROUGEEnhancedCoherenceScorer:
             return 1.0
 
         # Use leave-one-out approach with proper ROUGE-N scoring
-        rouge_metric = f'rouge{n}' if n <= 2 else 'rouge2'  # Fall back to rouge2 for n > 2
+        rouge_metric = (
+            f"rouge{n}" if n <= 2 else "rouge2"
+        )  # Fall back to rouge2 for n > 2
         coherence_scores = []
 
         for i, target_sentence in enumerate(sentences):
@@ -147,14 +151,20 @@ class ROUGEEnhancedCoherenceScorer:
         all_text = " ".join(sentences)
         all_words = all_text.lower().split()
         if len(all_words) > n:
-            unique_ngrams = len(set([" ".join(all_words[i:i+n]) for i in range(len(all_words)-n+1)]))
+            unique_ngrams = len(
+                {" ".join(all_words[i : i + n]) for i in range(len(all_words) - n + 1)}
+            )
             total_ngrams = len(all_words) - n + 1
             repetition_ratio = 1.0 - (unique_ngrams / total_ngrams)
 
             # Optimal repetition depends on n-gram size
             optimal_repetition = 0.15 if n == 1 else 0.05
-            repetition_bonus = 1.0 - abs(repetition_ratio - optimal_repetition) / (optimal_repetition + 0.1)
-            repetition_bonus = max(0.0, min(0.3, repetition_bonus * 0.3))  # Limit bonus to 0.3
+            repetition_bonus = 1.0 - abs(repetition_ratio - optimal_repetition) / (
+                optimal_repetition + 0.1
+            )
+            repetition_bonus = max(
+                0.0, min(0.3, repetition_bonus * 0.3)
+            )  # Limit bonus to 0.3
 
             final_score = avg_coherence + repetition_bonus
         else:
@@ -174,7 +184,8 @@ class ROUGEEnhancedCoherenceScorer:
         """
         tokens = word_tokenize(text.lower())
         filtered_tokens = [
-            token for token in tokens
+            token
+            for token in tokens
             if token.isalnum() and token not in self.stop_words
         ]
 
@@ -193,7 +204,7 @@ class ROUGEEnhancedCoherenceScorer:
             window_size = min(50, total_tokens // 2)
 
             for i in range(0, total_tokens - window_size + 1, window_size // 2):
-                window_tokens = filtered_tokens[i:i + window_size]
+                window_tokens = filtered_tokens[i : i + window_size]
                 window_ttr = len(set(window_tokens)) / len(window_tokens)
                 ttr_scores.append(window_ttr)
 
@@ -206,29 +217,90 @@ class ROUGEEnhancedCoherenceScorer:
         """
         return {
             "temporal": [
-                "then", "next", "meanwhile", "subsequently", "previously",
-                "earlier", "later", "finally", "eventually", "afterward",
-                "before", "after", "during", "while", "until", "once",
-                "now", "currently", "initially", "ultimately"
+                "then",
+                "next",
+                "meanwhile",
+                "subsequently",
+                "previously",
+                "earlier",
+                "later",
+                "finally",
+                "eventually",
+                "afterward",
+                "before",
+                "after",
+                "during",
+                "while",
+                "until",
+                "once",
+                "now",
+                "currently",
+                "initially",
+                "ultimately",
             ],
             "contingency": [
-                "because", "since", "as", "therefore", "thus", "consequently",
-                "as a result", "due to", "so", "hence", "accordingly",
-                "for this reason", "given that", "in order to", "so that",
-                "if", "unless", "provided that", "whereas"
+                "because",
+                "since",
+                "as",
+                "therefore",
+                "thus",
+                "consequently",
+                "as a result",
+                "due to",
+                "so",
+                "hence",
+                "accordingly",
+                "for this reason",
+                "given that",
+                "in order to",
+                "so that",
+                "if",
+                "unless",
+                "provided that",
+                "whereas",
             ],
             "comparison": [
-                "however", "but", "nevertheless", "nonetheless", "yet", "still",
-                "whereas", "while", "in contrast", "on the other hand",
-                "conversely", "alternatively", "instead", "rather",
-                "similarly", "likewise", "in the same way", "by comparison",
-                "although", "though", "despite", "in spite of"
+                "however",
+                "but",
+                "nevertheless",
+                "nonetheless",
+                "yet",
+                "still",
+                "whereas",
+                "while",
+                "in contrast",
+                "on the other hand",
+                "conversely",
+                "alternatively",
+                "instead",
+                "rather",
+                "similarly",
+                "likewise",
+                "in the same way",
+                "by comparison",
+                "although",
+                "though",
+                "despite",
+                "in spite of",
             ],
             "expansion": [
-                "and", "also", "furthermore", "moreover", "additionally",
-                "in addition", "besides", "for example", "for instance",
-                "specifically", "in particular", "namely", "that is",
-                "in other words", "indeed", "in fact", "actually"
+                "and",
+                "also",
+                "furthermore",
+                "moreover",
+                "additionally",
+                "in addition",
+                "besides",
+                "for example",
+                "for instance",
+                "specifically",
+                "in particular",
+                "namely",
+                "that is",
+                "in other words",
+                "indeed",
+                "in fact",
+                "actually",
             ],
         }
 
@@ -248,13 +320,13 @@ class ROUGEEnhancedCoherenceScorer:
                 "marker_diversity": 1.0,
                 "marker_density": 1.0,
                 "marker_consistency": 1.0,
-                "overall_discourse": 1.0
+                "overall_discourse": 1.0,
             }
 
         discourse_markers = self.get_discourse_markers()
 
         # Track marker usage
-        category_counts = {cat: 0 for cat in discourse_markers.keys()}
+        category_counts = dict.fromkeys(discourse_markers.keys(), 0)
         total_markers = 0
         marker_positions = []
 
@@ -264,7 +336,7 @@ class ROUGEEnhancedCoherenceScorer:
 
             for category, markers in discourse_markers.items():
                 for marker in markers:
-                    pattern = r'\b' + re.escape(marker) + r'\b'
+                    pattern = r"\b" + re.escape(marker) + r"\b"
                     if re.search(pattern, sentence_lower) and not found_marker:
                         category_counts[category] += 1
                         total_markers += 1
@@ -278,7 +350,11 @@ class ROUGEEnhancedCoherenceScorer:
         transitions_needed = len(sentences) - 1
 
         # Marker density: proportion of transitions with markers
-        marker_density = min(1.0, total_markers / transitions_needed) if transitions_needed > 0 else 1.0
+        marker_density = (
+            min(1.0, total_markers / transitions_needed)
+            if transitions_needed > 0
+            else 1.0
+        )
 
         # Marker diversity: how many different types of markers are used
         categories_used = sum(1 for count in category_counts.values() if count > 0)
@@ -290,18 +366,23 @@ class ROUGEEnhancedCoherenceScorer:
         else:
             # Calculate standard deviation of marker positions
             expected_interval = len(sentences) / len(marker_positions)
-            intervals = [marker_positions[i+1] - marker_positions[i] for i in range(len(marker_positions)-1)]
+            intervals = [
+                marker_positions[i + 1] - marker_positions[i]
+                for i in range(len(marker_positions) - 1)
+            ]
             std_dev = np.std(intervals) if intervals else 0
             marker_consistency = max(0.0, 1.0 - (std_dev / expected_interval))
 
         # Overall discourse score
-        overall_discourse = (0.4 * marker_density + 0.3 * marker_diversity + 0.3 * marker_consistency)
+        overall_discourse = (
+            0.4 * marker_density + 0.3 * marker_diversity + 0.3 * marker_consistency
+        )
 
         return {
             "marker_diversity": marker_diversity,
             "marker_density": marker_density,
             "marker_consistency": marker_consistency,
-            "overall_discourse": overall_discourse
+            "overall_discourse": overall_discourse,
         }
 
     def calculate_semantic_coherence(self, text: str) -> float:
@@ -365,7 +446,7 @@ class ROUGEEnhancedCoherenceScorer:
 
                 # ROUGE-based lexical contradiction check using proper ROUGE-L
                 scores = self.rouge_scorer.score(sentences[i], sentences[j])
-                rouge_sim = scores['rougeL'].fmeasure
+                rouge_sim = scores["rougeL"].fmeasure
 
                 # Combined contradiction score
                 if semantic_sim < threshold and rouge_sim > 0.3:
@@ -381,13 +462,12 @@ class ROUGEEnhancedCoherenceScorer:
         contradiction_ratio = contradictions / total_pairs
         return max(0.0, 1.0 - contradiction_ratio)
 
-    def calculate_coherence_score(self, text: str, reference_text: str = None) -> Dict[str, float]:
+    def calculate_coherence_score(self, text: str) -> Dict[str, float]:
         """
         Calculate comprehensive ROUGE-enhanced coherence score.
 
         Args:
             text: Text to evaluate for coherence
-            reference_text: Optional reference text for additional ROUGE analysis
 
         Returns:
             Dictionary containing detailed coherence metrics and overall score
@@ -403,7 +483,7 @@ class ROUGEEnhancedCoherenceScorer:
                 "contradiction_penalty": 1.0,
                 "readability": 0.0,
                 "length_penalty": 0.0,
-                "overall_coherence": 0.0
+                "overall_coherence": 0.0,
             }
 
         # Core ROUGE-based metrics
@@ -428,7 +508,7 @@ class ROUGEEnhancedCoherenceScorer:
         try:
             fk_grade = textstat.flesch_kincaid_grade(text)
             readability = max(0, min(1, (20 - fk_grade) / 20))
-        except:
+        except Exception:
             readability = 0.5
 
         # Length penalty for very short summaries
@@ -439,13 +519,13 @@ class ROUGEEnhancedCoherenceScorer:
 
         # Weighted combination of all metrics (rebalanced for better scores)
         overall_coherence = (
-            0.08 * rouge_1 +           # Unigram coherence
-            0.08 * rouge_2 +           # Bigram coherence
-            0.08 * rouge_l +           # Longest common subsequence
-            0.40 * semantic_coh +      # Semantic similarity (primary weight)
-            0.25 * discourse_coh +     # Discourse markers (strong weight)
-            0.08 * lexical_div +       # Lexical diversity
-            0.03 * readability         # Readability (minimal weight)
+            0.08 * rouge_1  # Unigram coherence
+            + 0.08 * rouge_2  # Bigram coherence
+            + 0.08 * rouge_l  # Longest common subsequence
+            + 0.40 * semantic_coh  # Semantic similarity (primary weight)
+            + 0.25 * discourse_coh  # Discourse markers (strong weight)
+            + 0.08 * lexical_div  # Lexical diversity
+            + 0.03 * readability  # Readability (minimal weight)
         )
 
         # Apply penalties
@@ -462,7 +542,7 @@ class ROUGEEnhancedCoherenceScorer:
             "contradiction_penalty": contradiction_pen,
             "readability": readability,
             "length_penalty": length_penalty,
-            "overall_coherence": overall_coherence
+            "overall_coherence": overall_coherence,
         }
 
     def score(self, text: str) -> float:
