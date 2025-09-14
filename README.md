@@ -97,7 +97,7 @@ summaryeval/
 
 ### Accuracy Score (0.0 - 1.0)
 
-Uses LLM-as-judge methodology with GPT-4/GPT-4o to assess factual correctness and alignment with source material.
+Uses LLM-as-judge methodology to assess factual correctness and alignment with source material.
 
 **Process:**
 1. **LLM Evaluation**: OpenAI model compares summary against source text
