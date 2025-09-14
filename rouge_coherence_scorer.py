@@ -12,12 +12,15 @@ import textstat
 from sentence_transformers import SentenceTransformer
 from collections import Counter
 import re
+from rouge_score import rouge_scorer
 
 
 class ROUGEEnhancedCoherenceScorer:
     """
     ROUGE enhanced coherence scorer that provides comprehensive coherence evaluation
     by combining traditional coherence metrics with ROUGE-based n-gram analysis.
+
+    Uses the official rouge-score library for accurate ROUGE-1, ROUGE-2, and ROUGE-L calculations.
 
     Score Normalization:
         All scores are normalized to the range [0.0, 1.0] where:
@@ -27,7 +30,7 @@ class ROUGEEnhancedCoherenceScorer:
         - 0.0-0.3: Poor coherence - Incoherent, fragmented, or very low quality
 
     Component Metrics (all normalized 0.0-1.0):
-        - ROUGE-1/2/L: F1 scores for n-gram and longest common subsequence analysis
+        - ROUGE-1/2/L: Official F1 scores using rouge-score library with stemming
         - Semantic coherence: Sentence embedding similarities combined with ROUGE-L
         - Discourse coherence: Penn Discourse Treebank marker analysis
         - Lexical diversity: Type-Token Ratio with windowed normalization
@@ -64,24 +67,12 @@ class ROUGEEnhancedCoherenceScorer:
 
         self.sentence_model = SentenceTransformer(sentence_model)
         self.stop_words = set(stopwords.words("english"))
+        self.rouge_scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
-    def _get_ngrams(self, text: str, n: int) -> List[Tuple[str, ...]]:
-        """Extract n-grams from text."""
-        tokens = word_tokenize(text.lower())
-        # Filter out stopwords and punctuation for better ROUGE analysis
-        filtered_tokens = [
-            token for token in tokens
-            if token.isalnum() and token not in self.stop_words
-        ]
-
-        if len(filtered_tokens) < n:
-            return []
-
-        return [tuple(filtered_tokens[i:i+n]) for i in range(len(filtered_tokens) - n + 1)]
 
     def calculate_rouge_l(self, summary: str, reference: str = None) -> float:
         """
-        Calculate ROUGE-L for lexical coherence using global text analysis.
+        Calculate ROUGE-L for lexical coherence using rouge-score library.
 
         Args:
             summary: The summary text to analyze
@@ -95,8 +86,7 @@ class ROUGEEnhancedCoherenceScorer:
             if len(sentences) < 2:
                 return 1.0
 
-            # Instead of consecutive comparison, use global coherence approach
-            # Compare each sentence against the rest of the text
+            # Use leave-one-out approach with proper ROUGE-L scoring
             coherence_scores = []
 
             for i, target_sentence in enumerate(sentences):
@@ -107,60 +97,21 @@ class ROUGEEnhancedCoherenceScorer:
                     continue
 
                 reference_text = " ".join(other_sentences)
-                score = self._lcs_based_rouge_l(target_sentence, reference_text)
-                coherence_scores.append(score)
+                scores = self.rouge_scorer.score(reference_text, target_sentence)
+                rouge_l_score = scores['rougeL'].fmeasure
+                coherence_scores.append(rouge_l_score)
 
-            # Return average coherence score
+            # Return average coherence score with scaling
             avg_coherence = np.mean(coherence_scores) if coherence_scores else 0.0
-
-            # Scale to be more generous for good texts
-            return min(1.0, avg_coherence * 2.0)
+            return min(1.0, avg_coherence * 1.5)  # Moderate scaling for internal coherence
         else:
-            return self._lcs_based_rouge_l(summary, reference)
+            scores = self.rouge_scorer.score(reference, summary)
+            return scores['rougeL'].fmeasure
 
-    def _lcs_based_rouge_l(self, text1: str, text2: str) -> float:
-        """Calculate ROUGE-L using longest common subsequence."""
-        tokens1 = word_tokenize(text1.lower())
-        tokens2 = word_tokenize(text2.lower())
-
-        # Filter tokens
-        tokens1 = [t for t in tokens1 if t.isalnum() and t not in self.stop_words]
-        tokens2 = [t for t in tokens2 if t.isalnum() and t not in self.stop_words]
-
-        if not tokens1 or not tokens2:
-            return 0.0
-
-        lcs_length = self._lcs_length(tokens1, tokens2)
-
-        if lcs_length == 0:
-            return 0.0
-
-        precision = lcs_length / len(tokens1) if tokens1 else 0.0
-        recall = lcs_length / len(tokens2) if tokens2 else 0.0
-
-        if precision + recall == 0:
-            return 0.0
-
-        f1_score = 2 * (precision * recall) / (precision + recall)
-        return f1_score
-
-    def _lcs_length(self, seq1: List[str], seq2: List[str]) -> int:
-        """Calculate longest common subsequence length."""
-        m, n = len(seq1), len(seq2)
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-
-        for i in range(1, m + 1):
-            for j in range(1, n + 1):
-                if seq1[i-1] == seq2[j-1]:
-                    dp[i][j] = dp[i-1][j-1] + 1
-                else:
-                    dp[i][j] = max(dp[i-1][j], dp[i][j-1])
-
-        return dp[m][n]
 
     def calculate_rouge_n(self, summary: str, n: int = 2) -> float:
         """
-        Calculate ROUGE-N for internal n-gram consistency using global approach.
+        Calculate ROUGE-N for internal n-gram consistency using rouge-score library.
 
         Args:
             summary: The summary text to analyze
@@ -173,56 +124,42 @@ class ROUGEEnhancedCoherenceScorer:
         if len(sentences) < 2:
             return 1.0
 
-        # Get all n-grams from the entire summary
-        all_ngrams = []
-        sentence_ngrams = []
+        # Use leave-one-out approach with proper ROUGE-N scoring
+        rouge_metric = f'rouge{n}' if n <= 2 else 'rouge2'  # Fall back to rouge2 for n > 2
+        coherence_scores = []
 
-        for sentence in sentences:
-            ngrams = self._get_ngrams(sentence, n)
-            sentence_ngrams.append(set(ngrams))
-            all_ngrams.extend(ngrams)
+        for i, target_sentence in enumerate(sentences):
+            # Create reference from all other sentences
+            other_sentences = [sentences[j] for j in range(len(sentences)) if j != i]
+            if not other_sentences:
+                coherence_scores.append(0.5)
+                continue
 
-        if not all_ngrams:
-            return 0.5  # Neutral score for very short texts
+            reference_text = " ".join(other_sentences)
+            scores = self.rouge_scorer.score(reference_text, target_sentence)
+            rouge_n_score = scores[rouge_metric].fmeasure
+            coherence_scores.append(rouge_n_score)
 
-        # Calculate global n-gram distribution
-        global_counter = Counter(all_ngrams)
-        total_unique_ngrams = len(global_counter)
-        total_ngrams = len(all_ngrams)
+        # Calculate average with appropriate scaling for coherence
+        avg_coherence = np.mean(coherence_scores) if coherence_scores else 0.0
 
-        if total_unique_ngrams == 0:
-            return 0.5
+        # Add bonus for optimal n-gram repetition patterns
+        all_text = " ".join(sentences)
+        all_words = all_text.lower().split()
+        if len(all_words) > n:
+            unique_ngrams = len(set([" ".join(all_words[i:i+n]) for i in range(len(all_words)-n+1)]))
+            total_ngrams = len(all_words) - n + 1
+            repetition_ratio = 1.0 - (unique_ngrams / total_ngrams)
 
-        # For coherence, we want some repetition of key terms but not too much
-        # Calculate thematic consistency across sentences
-        cross_sentence_overlap = 0
-        total_comparisons = 0
+            # Optimal repetition depends on n-gram size
+            optimal_repetition = 0.15 if n == 1 else 0.05
+            repetition_bonus = 1.0 - abs(repetition_ratio - optimal_repetition) / (optimal_repetition + 0.1)
+            repetition_bonus = max(0.0, min(0.3, repetition_bonus * 0.3))  # Limit bonus to 0.3
 
-        for i in range(len(sentence_ngrams)):
-            for j in range(i + 1, len(sentence_ngrams)):
-                if sentence_ngrams[i] and sentence_ngrams[j]:
-                    overlap = len(sentence_ngrams[i] & sentence_ngrams[j])
-                    union = len(sentence_ngrams[i] | sentence_ngrams[j])
-                    if union > 0:
-                        cross_sentence_overlap += overlap / union
-                    total_comparisons += 1
+            final_score = avg_coherence + repetition_bonus
+        else:
+            final_score = avg_coherence
 
-        if total_comparisons == 0:
-            return 0.5
-
-        # Average Jaccard similarity between sentences
-        avg_similarity = cross_sentence_overlap / total_comparisons
-
-        # Repetition ratio (how much key content is repeated)
-        repetition_ratio = 1.0 - (total_unique_ngrams / total_ngrams)
-
-        # Combine similarity and optimal repetition
-        optimal_repetition = 0.15 if n == 1 else 0.05  # Expect some repetition
-        repetition_score = 1.0 - abs(repetition_ratio - optimal_repetition) / (optimal_repetition + 0.1)
-        repetition_score = max(0.0, min(1.0, repetition_score))
-
-        # Final score combines cross-sentence similarity with optimal repetition
-        final_score = 0.7 * avg_similarity + 0.3 * repetition_score
         return min(1.0, max(0.0, final_score))
 
     def calculate_lexical_diversity(self, text: str) -> float:
@@ -426,8 +363,9 @@ class ROUGEEnhancedCoherenceScorer:
                 # Semantic contradiction check
                 semantic_sim = similarities[i][j]
 
-                # ROUGE-based lexical contradiction check
-                rouge_sim = self._lcs_based_rouge_l(sentences[i], sentences[j])
+                # ROUGE-based lexical contradiction check using proper ROUGE-L
+                scores = self.rouge_scorer.score(sentences[i], sentences[j])
+                rouge_sim = scores['rougeL'].fmeasure
 
                 # Combined contradiction score
                 if semantic_sim < threshold and rouge_sim > 0.3:
